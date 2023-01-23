@@ -1,3 +1,4 @@
+import multiprocessing
 from tqdm import tqdm
 
 import torch
@@ -14,6 +15,7 @@ from DGenerator import DGenerator
 
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Process, Queue
+from mlflow import log_metric
 
 random.seed(42)
 
@@ -27,10 +29,14 @@ BASE_MODEL = 't5-base'
 def write_results(q, filename):
     header = ['question', 'context', 'answer', 'incorrect1', 'incorect2', 'incorrect3']
     output = pd.DataFrame(columns=header)
+    one_missing = 0
+    two_missing = 0
+    three_missing = 0
     with open(filename, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f, delimiter=',')
         writer.writerow(header)
         count = 0
+
         while True:
             result = q.get()
             if result is None:
@@ -40,6 +46,17 @@ def write_results(q, filename):
             writer.writerow(result)
             output = pd.concat([pd.DataFrame([result], columns=header), output], ignore_index=True)
             count += 1
+            if result[3] == '':
+                three_missing += 1
+            elif result[4] == '':
+                two_missing += 1
+            elif result[5] == '':
+                one_missing += 1
+                
+            log_param('count', count)
+            log_param('one_missing', one_missing)
+            log_param('two_missing', two_missing)
+            log_param('three_missing', three_missing)
             if count % 100 == 0 :
                 output.to_csv(filename+'.backup')
     
@@ -81,7 +98,7 @@ def gen_d():
     
     output_file = f'datasets/eval/dgen-{BASE_MODEL}_{dataset_name}'
     
-    workers = 10
+    workers = multiprocessing.cpu_count() - 2
     
     split_dfs = np.array_split(dataset_df, workers)
     
