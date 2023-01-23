@@ -3,6 +3,12 @@ __pycache__/
 *.py[cod]
 *$py.class
 
+datasets/
+lightning_logs/
+checkpoints/
+mlruns/
+preprocess_datasets/
+
 # C extensions
 *.so
 
