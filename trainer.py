@@ -40,8 +40,8 @@ def main():
         train_df,
         test_df,
         dev_df,
-        model_name= 't5-base',
-        epochs = 12,
+        model_name= 't5-small',
+        epochs = 6,
         learning_rate= 0.0001,
         df_take_percentage = 1,
         datasets_name = datasets_name
