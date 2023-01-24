@@ -8,7 +8,7 @@ lightning_logs/
 checkpoints/
 mlruns/
 preprocess_datasets/
-
+processed_datasets/
 # C extensions
 *.so
 
