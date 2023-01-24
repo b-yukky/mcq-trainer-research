@@ -1,4 +1,3 @@
-from mlflow import log_metric
 from transformers import (
     AdamW,
     T5ForConditionalGeneration,
@@ -23,7 +22,6 @@ class QGModel(pl.LightningModule):
         labels = batch['labels']
         loss, output = self(input_ids, attention_mask, labels)
         self.log('train_loss', loss, prog_bar=True, logger=True)
-        log_metric('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -32,7 +30,7 @@ class QGModel(pl.LightningModule):
         labels = batch['labels']
         loss, output = self(input_ids, attention_mask, labels)
         self.log('val_loss', loss, prog_bar=True, logger=True)
-        log_metric('val_loss', loss)
+        print('val_loss', loss)
         return loss
 
     def test_step(self, batch, batch_idx):
@@ -41,7 +39,7 @@ class QGModel(pl.LightningModule):
         labels = batch['labels']
         loss, output = self(input_ids, attention_mask, labels)
         self.log('test_loss', loss, prog_bar=True)
-        log_metric('test_loss', loss)
+
         return loss
   
     def configure_optimizers(self):

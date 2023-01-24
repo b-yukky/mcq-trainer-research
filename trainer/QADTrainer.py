@@ -1,7 +1,4 @@
 from typing import List, Dict
-from xmlrpc.client import boolean
-import tqdm.notebook as tq
-from tqdm.notebook import tqdm
 import json
 import pandas as pd
 import numpy as np
@@ -16,10 +13,8 @@ from transformers import (
     T5TokenizerFast as T5Tokenizer,
     )
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
 
 import time
-from mlflow import log_metric, log_param, log_artifacts
 from QGModel import QGModel
 from QGDataset import QGDataset
 from DTDataset import DTDataset
@@ -90,11 +85,9 @@ class QADTrainer():
         self.loading_model(model_name)
         self.init_data_module(custom=True if self.datasets_name.__contains__('multi-qad') else False)
         self.timenow = time.strftime("%m-%d_%Hh%M")
-        self.logger = TensorBoardLogger("lightning_logs", name=f"{model_name}_{self.timenow}")
         self.init_checkpoint_callback()
         self.init_trainer()
         self.init_model()
-        self.send_log_param()
         
     def dataset_take_percentage(self, percent):
         self.TAKE_TRAIN = int(len(self.train_df) * percent)
@@ -123,11 +116,10 @@ class QADTrainer():
     
     def init_trainer(self):
         self.trainer = pl.Trainer(
-            logger=self.logger,
             callbacks= [self.checkpoint_callback],
             max_epochs=self.MAX_EPOCHS,
             enable_progress_bar=True,
-            accelerator='gpu',
+            accelerator='cuda' if torch.cuda.is_available() else 'cpu',
             devices=1,
             val_check_interval=0.2
         )
@@ -139,9 +131,4 @@ class QADTrainer():
     def start_training(self):
         self.trainer.fit(self.model, self.data_module)
 
-    def send_log_param(self):
-        log_param('model_name', self.MODEL_NAME)
-        log_param('epochs', self.MAX_EPOCHS)
-        log_param('learning_rate', self.LEARNING_RATE)
-        log_param('batch_size', self.BATCH_SIZE)
-        log_param('datasets', self.datasets_name)
+
