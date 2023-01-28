@@ -32,6 +32,7 @@ class QGModel(pl.LightningModule):
         labels = batch['labels']
         loss, output = self(input_ids, attention_mask, labels)
         self.log('val_loss', loss, prog_bar=True, logger=True)
+        
         log_metric('val_loss', loss)
         return loss
 

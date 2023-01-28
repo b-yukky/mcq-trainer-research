@@ -7,7 +7,7 @@ import torch
 
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
 
-class DGenerator():
+class MDTGenerator():
     
     def __init__(self, base_model: str, checkpoint_path: str) -> None:
         self.SEP_TOKEN = '<sep>'
@@ -20,7 +20,7 @@ class DGenerator():
         self.dg_model.freeze()
         self.dg_model.eval()
         
-    def generate(self, answer: str, question:str, context: str, generate_count: int = 3) -> List[str]:
+    def generate(self, answer: str, question:str, incorrect1: str, incorrect2: str, generate_count: int = 9) -> List[str]:
         
         loop = 0
         distractors = []
@@ -28,7 +28,7 @@ class DGenerator():
         while len(distractors) < 3 and loop < 3:
             generate_triples_count = int(generate_count / 3.01) + 1 #since this model generates 3 distractors per generation
             
-            model_output = self._model_predict(answer, question, context, generate_triples_count)
+            model_output = self._model_predict(answer, question, incorrect1, incorrect2, generate_triples_count)
 
             cleaned_result = model_output.replace('<pad>', '').replace('</s>', '<sep>')
             cleaned_result = self._replace_all_extra_id(cleaned_result)
@@ -70,20 +70,22 @@ class DGenerator():
             
         return distractors
     
-    def _model_predict(self, answer: str, question: str, context: str, generate_count: int):
+    def _model_predict(self, answer: str, question: str, incorrect1: str, incorrect2: str, generate_count: int):
+        
         source_encoding = self.tokenizer(
-            '{} {} {} {} {}'.format(
+            '{} {} {} {} {} {} {} {}'.format(
                 answer, self.SEP_TOKEN, 
-                question, self.SEP_TOKEN, 
-                context
+                question, self.SEP_TOKEN,
+                incorrect1, self.SEP_TOKEN,
+                incorrect2, self.SEP_TOKEN
             ),
-            max_length=self.SOURCE_MAX_TOKEN_LEN,
+            max_length= self.SOURCE_MAX_TOKEN_LEN,
             padding='max_length',
-            truncation=True,
+            truncation= True,
             return_attention_mask=True,
             add_special_tokens=True,
             return_tensors='pt'
-        )
+            )
         
         source_encoding['input_ids'] = source_encoding['input_ids'].to(device)
         source_encoding['attention_mask'] = source_encoding['attention_mask'].to(device)

@@ -1,4 +1,5 @@
 import multiprocessing
+from async_timeout import timeout
 from tqdm import tqdm
 
 import torch
@@ -12,6 +13,7 @@ import csv
 from datasets import load_dataset
 from QAGenerator import QAGenerator
 from DGenerator import DGenerator
+from MDTGenerator import MDTGenerator
 
 from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Process, Queue
@@ -24,8 +26,10 @@ os.environ["PYTHONUNBUFFERED"] = "1"
 CHECKPOINT_PATH ='checkpoints\\t5-base\\multi-qad-161k\\DGen\\best-checkpoint-v2.ckpt'
 BASE_MODEL = 't5-base'
 
+dataset_length = 1
 
-def write_results(q, filename):
+
+def write_results(write_queue, filename, length):
     header = ['question', 'context', 'answer', 'incorrect1', 'incorect2', 'incorrect3']
     output = pd.DataFrame(columns=header)
 
@@ -35,11 +39,12 @@ def write_results(q, filename):
         count = 0
 
         while True:
-            result = q.get()
+            result = write_queue.get()
             if result is None:
+                print('break writing, end?')
                 break
             
-            print(result[2:], count)
+            print(f"{result[2:]} | {count} | {round(count/length, 4)*100}%")
             writer.writerow(result)
             output = pd.concat([pd.DataFrame([result], columns=header), output], ignore_index=True)
             count += 1
@@ -47,33 +52,42 @@ def write_results(q, filename):
             if count % 100 == 0 :
                 output.to_csv(filename+'.backup')
     
-def process_df(q, df):
+def process_df(data_queue, write_queue):
     # Do something with the row
     d_model = DGenerator(BASE_MODEL, CHECKPOINT_PATH)
-    dataset = QGDataset(df, d_model.tokenizer, d_model.SOURCE_MAX_TOKEN_LEN, d_model.TARGET_MAX_TOKEN_LEN)
-    
-    for i in tqdm(range(dataset.__len__())):
-        question = dataset.data.iloc[i]['question']
-        context = dataset.data.iloc[i]['context']
-        answer = dataset.data.iloc[i]['answer']
+
+    while True:
+        row = data_queue.get(timeout=3)
+        
+        if row is None:
+            break
+        
+        question = row['question']
+        context = row['context']
+        answer = row['answer']
+        
+        incorrect1 = row['incorrect1'] if 'incorrect1' in row else '[MASK]'
+        incorrect2 = row['incorrect2'] if 'incorrect2' in row else '[MASK]'
         
         t1_start = perf_counter()
-        distractors = d_model.generate(answer, question, context)
+        
+        distractors = d_model.generate(answer, question, context, 9)
+
         log_metric('generation_time', perf_counter() - t1_start)
         
         while len(distractors) < 3:
             distractors.append('')
 
-        q.put([question, context, answer, distractors[0], distractors[1], distractors[2]])
+        write_queue.put_nowait([question, context, answer, distractors[0], distractors[1], distractors[2]])
 
     
 def gen_d():
     
     
-    dataset_path = 'datasets/processed/train_squad.csv'
+    dataset_path = 'datasets/processed/adversarial-qa.csv'
     dataset_df = pd.read_csv(dataset_path)
     
-    dataset_df.rename(columns = {'answer_text':'answer'}, inplace = True)
+    # dataset_df.rename(columns = {'answer_text':'answer'}, inplace = True)
         
     dataset_name = dataset_path.split('/')[-1]
     
@@ -85,19 +99,25 @@ def gen_d():
     
     output_file = f'datasets/eval/dgen-{BASE_MODEL}_{dataset_name}'
     
-    workers = 14
+    workers = 2
     
-    split_dfs = np.array_split(dataset_df, workers)
-    
-    q = Queue()
+    write_queue = Queue()
+    data_queue = Queue()
     processes = []
+    
+    for _, row in dataset_df.iterrows():
+        data_queue.put(row)
+    data_queue.put(None)
+    data_queue.close()
+
     # Start a process to write the results to the output file
-    p = Process(target=write_results, args=(q, output_file,))
+    p = Process(target=write_results, args=(write_queue, output_file, data_queue.qsize()))
     processes.append(p)
     p.start()
     
-    for df in split_dfs:
-        p = Process(target=process_df, args=(q, df))
+    
+    for i in range(workers):
+        p = Process(target=process_df, args=(data_queue, write_queue,))
         processes.append(p)
         p.start()
     

@@ -23,6 +23,7 @@ from mlflow import log_metric, log_param, log_artifacts
 from QGModel import QGModel
 from QGDataset import QGDataset
 from DTDataset import DTDataset
+from MDTDataset import MDTDataset
 
 pl.seed_everything(42)
 
@@ -52,9 +53,9 @@ class QGDataModule(pl.LightningDataModule):
 
     def setup(self, stage='fit'):
         if self.custom:
-            self.train_dataset = DTDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-            self.val_dataset = DTDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-            self.test_dataset = DTDataset(self.test_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+            self.train_dataset = MDTDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+            self.val_dataset = MDTDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+            self.test_dataset = MDTDataset(self.test_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
         else:
             self.train_dataset = QGDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
             self.val_dataset = QGDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
@@ -84,7 +85,7 @@ class QADTrainer():
         self.SOURCE_MAX_TOKEN_LEN = 512
         self.TARGET_MAX_TOKEN_LEN = 128
         self.MAX_EPOCHS = epochs
-        self.BATCH_SIZE = 16
+        self.BATCH_SIZE = 32
         self.LEARNING_RATE = learning_rate
         self.dataset_take_percentage(df_take_percentage)
         self.loading_model(model_name)
@@ -129,7 +130,7 @@ class QADTrainer():
             enable_progress_bar=True,
             accelerator='gpu',
             devices=1,
-            val_check_interval=0.2
+            val_check_interval=0.25
         )
         
     def init_model(self):

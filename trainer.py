@@ -40,7 +40,7 @@ def main():
         train_df,
         test_df,
         dev_df,
-        model_name= 't5-small',
+        model_name= 't5-base',
         epochs = 6,
         learning_rate= 0.0001,
         df_take_percentage = 1,
