@@ -1,49 +1,45 @@
+from dis import dis
 from transformers import T5TokenizerFast as T5Tokenizer
-from QGModel import QGModel
+from .QGModel import QGModel
 from typing import List, Dict, Tuple
-import string
-from sentence_transformers import SentenceTransformer, util
 import torch
+from sentence_transformers import SentenceTransformer, util
 
-device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
-
-class DGenerator():
+class MCQGenerator():
     
     def __init__(self, base_model: str, checkpoint_path: str) -> None:
         self.SEP_TOKEN = '<sep>'
-        self.SOURCE_MAX_TOKEN_LEN = 512
-        self.TARGET_MAX_TOKEN_LEN = 128
+        self.SOURCE_MAX_TOKEN_LEN = 300
+        self.TARGET_MAX_TOKEN_LEN = 80
         self.tokenizer = T5Tokenizer.from_pretrained(base_model)
         self.tokenizer.add_tokens(self.SEP_TOKEN)
-        self.dg_model = QGModel.load_from_checkpoint(checkpoint_path=checkpoint_path, model_name=base_model,tokenizer_len=len(self.tokenizer))
+        self.qg_model = QGModel.load_from_checkpoint(checkpoint_path=checkpoint_path, model_name=base_model,tokenizer_len=len(self.tokenizer))
         self.sentence_transformer = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
-        self.dg_model.freeze()
-        self.dg_model.eval()
+        self.qg_model.freeze()
+        self.qg_model.eval()
         
-    def generate(self, answer: str, question:str, context: str, generate_count: int = 3) -> List[str]:
+    def generate(self, context: str) -> Tuple[str, str]:
+        answer_mask = '[MASK]'
+        model_output = self._model_predict(answer_mask, context)
+
+        mcq = model_output.split('<sep>')
+                
+        generated_answer = mcq[0].strip() if len(mcq) > 0 else ''
+        generated_question = mcq[1].strip() if len(mcq) > 1 else ''
         
-        loop = 0
-        distractors = []
+        incorrect1 = mcq[2] if len(mcq) > 2 else ''
+        incorrect2 = mcq[3] if len(mcq) > 3 else ''
+        incorrect3 = mcq[4] if len(mcq) > 4 else ''
         
-        while len(distractors) < 3 and loop < 3:
-            generate_triples_count = int(generate_count / 3.01) + 1 #since this model generates 3 distractors per generation
-            
-            model_output = self._model_predict(answer, question, context, generate_triples_count)
-
-            cleaned_result = model_output.replace('<pad>', '').replace('</s>', '<sep>')
-            cleaned_result = self._replace_all_extra_id(cleaned_result)
-            new_distractors = cleaned_result.split('<sep>')[:-1]
-            # new_distractors = [x.translate(str.maketrans('', '', string.punctuation)) for x in new_distractors]
-            new_distractors = list(map(lambda x: x.strip(), new_distractors))
-            # new_distractors = list(map(lambda x: x.replace('<unk>', ''), new_distractors))
-            new_distractors = list(map(lambda x: x[:-1] if x[-1:] in '.,;\\!][+@&?:;><-=}{#~' else x, new_distractors))
-            
-            distractors.extend(new_distractors)
-            distractors = self._remove_similar_distractors([answer], distractors)
-
-            loop += 1
-
-        return distractors
+        distractors = [incorrect1, incorrect2, incorrect3]
+        distractors = list(map(lambda x: x.strip(), distractors))
+        distractors = list(map(lambda x: x[:-1] if x[-1:] in '.,;\\!][+@&?:;><-=}{#~' else x, distractors))
+        distractors = self._remove_similar_distractors([generated_answer], distractors)
+        
+        while len(distractors) < 3:
+            distractors.append('')
+        
+        return generated_answer, generated_question, distractors[0], distractors[1], distractors[2]
     
     
     def _remove_similar_distractors(self, answer_list: list[str], distractors: list[str], threshold: float = 0.9):
@@ -65,17 +61,15 @@ class DGenerator():
                 to_delete.append(distractors[j-1])
 
         for v in to_delete:
-            if v in distractors:
+            if (answer_list + distractors).count(v) > 1:
                 distractors.remove(v)
             
         return distractors
     
-    def _model_predict(self, answer: str, question: str, context: str, generate_count: int):
+    def _model_predict(self, answer: str, context: str):
         source_encoding = self.tokenizer(
-            '{} {} {} {} {}'.format(
-                answer, self.SEP_TOKEN, 
-                question, self.SEP_TOKEN, 
-                context
+            'fullmcq: {} {} {}'.format(
+                answer, self.SEP_TOKEN, context
             ),
             max_length=self.SOURCE_MAX_TOKEN_LEN,
             padding='max_length',
@@ -84,26 +78,21 @@ class DGenerator():
             add_special_tokens=True,
             return_tensors='pt'
         )
-        
-        source_encoding['input_ids'] = source_encoding['input_ids'].to(device)
-        source_encoding['attention_mask'] = source_encoding['attention_mask'].to(device)
-        self.dg_model.model.to(device)
 
         with torch.no_grad():
-            generated_ids = self.dg_model.model.generate(
+            generated_ids = self.qg_model.model.generate(
                 input_ids=source_encoding['input_ids'],
                 attention_mask=source_encoding['attention_mask'],
-                num_beams=generate_count,
-                num_return_sequences=generate_count,
+                num_beams=1,
                 max_length=self.TARGET_MAX_TOKEN_LEN,
-                repetition_penalty=2.5,
-                length_penalty=1.0,
+                repetition_penalty=1.6,
+                length_penalty=1.3,
                 early_stopping=True,
-                use_cache=True
+                use_cache=True,
             )
 
         preds = {
-            self.tokenizer.decode(generated_id, skip_special_tokens=False, clean_up_tokenization_spaces=True)
+            self.tokenizer.decode(generated_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             for generated_id in generated_ids
         }
 

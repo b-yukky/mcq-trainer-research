@@ -20,10 +20,12 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 import time
 from mlflow import log_metric, log_param, log_artifacts
-from QGModel import QGModel
-from QGDataset import QGDataset
-from DTDataset import DTDataset
-from MDTDataset import MDTDataset
+from  models.QGModel import QGModel
+from models.QGDataset import QGDataset
+from models.DTDataset import DTDataset
+from models.MDTDataset import MDTDataset
+from models.MCQDataset import MCQDataset
+from models.MultiDataset import MultiDataset
 
 pl.seed_everything(42)
 
@@ -52,14 +54,10 @@ class QGDataModule(pl.LightningDataModule):
         self.custom = custom
 
     def setup(self, stage='fit'):
-        if self.custom:
-            self.train_dataset = MDTDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-            self.val_dataset = MDTDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-            self.test_dataset = MDTDataset(self.test_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-        else:
-            self.train_dataset = QGDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-            self.val_dataset = QGDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-            self.test_dataset = QGDataset(self.test_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+        self.train_dataset = MultiDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+        self.val_dataset = MultiDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+        self.test_dataset = MultiDataset(self.test_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+    
 
 
     def train_dataloader(self):
@@ -85,7 +83,7 @@ class QADTrainer():
         self.SOURCE_MAX_TOKEN_LEN = 512
         self.TARGET_MAX_TOKEN_LEN = 128
         self.MAX_EPOCHS = epochs
-        self.BATCH_SIZE = 32
+        self.BATCH_SIZE = 3
         self.LEARNING_RATE = learning_rate
         self.dataset_take_percentage(df_take_percentage)
         self.loading_model(model_name)
@@ -113,8 +111,12 @@ class QADTrainer():
         self.data_module.setup()
 
     def init_checkpoint_callback(self):
+        try:
+            modelname = self.MODEL_NAME.split('/')[0]
+        except Exception:
+            modelname=  't5-flan-base'
         self.checkpoint_callback = ModelCheckpoint(
-            dirpath=f'checkpoints/{self.MODEL_NAME}',
+            dirpath=f'checkpoints/{modelname}',
             filename=f'best-checkpoint',
             save_top_k=-1,
             verbose=True,

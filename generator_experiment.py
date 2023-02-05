@@ -1,23 +1,17 @@
 import multiprocessing
-from async_timeout import timeout
 from tqdm import tqdm
 
 import torch
-from time import perf_counter
 import random
 import pandas as pd
 import numpy as np
-from mlflow import log_metric, log_param, log_artifacts
-from  models.QGDataset import QGDataset
 import csv
-from datasets import load_dataset
-from  models.QAGenerator import QAGenerator
-from models.DGenerator import DGenerator
-from  models.MDTGenerator import MDTGenerator
+
 from  models.MCQGenerator import MCQGenerator
 from  models.MultiGenerator import MultiGenerator
+from models.LeafGenerator import LeafBaseMCQGenerator
+from models.OpenAIGenerator import OpenAIGenerator
 
-from concurrent.futures import ProcessPoolExecutor
 from multiprocessing import Process, Queue
 
 random.seed(42)
@@ -25,14 +19,17 @@ random.seed(42)
 import os
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-CHECKPOINT_PATH ='checkpoints\\google\\multimcq-1M\\large\\00005-checkpoint-v3.ckpt'
-BASE_MODEL = 'google/flan-t5-large'
+CHECKPOINT_PATH ='checkpoints\\google\\multimcq-1M\\base\\00005-checkpoint-v3.ckpt'
+BASE_MODEL = 'google/flan-t5-base'
+BASE_MODEL = '/text-davinci-003'
 
+DATASET_NAME = 'wikipedia-10T'
 
-def write_results(write_queue, filename, length):
-    header = ['context', 'question', 'answer', 'incorrect1', 'incorect2', 'incorrect3']
+def write_results(write_queue, filename, length, model_name):
+    global DATASET_NAME
+    header = ['topic', 'context', 'question', 'answer', 'choices', 'model', 'dataset']
     output = pd.DataFrame(columns=header)
-
+    
     with open(filename, mode='w', newline='', encoding='utf-8') as f:
         writer = csv.writer(f, delimiter=',')
         writer.writerow(header)
@@ -44,16 +41,23 @@ def write_results(write_queue, filename, length):
                 break
             
             print(f"{result[1:]} | {count} | {round(count/length, 4)*100}%")
-            writer.writerow(result)
-            output = pd.concat([pd.DataFrame([result], columns=header), output], ignore_index=True)
+            writer.writerow(result + [model_name] + [DATASET_NAME])
+            output = pd.concat([pd.DataFrame([result + [model_name] + [DATASET_NAME]], columns=header), output])
             count += 1
+            
+            if count == 100:
+                output.to_csv(filename, index=False)
+                print('Saved!')
+        
+        print('Done!')
+    
+    exit(0)
 
-            if count % 500 == 0 :
-                output.to_csv(filename+'.backup')
     
 def process_df(data_queue, write_queue):
     # Do something with the row
-    d_model = MultiGenerator(BASE_MODEL, CHECKPOINT_PATH)
+    # model = MultiGenerator(BASE_MODEL, CHECKPOINT_PATH)
+    model = OpenAIGenerator()
 
     while True:
         row = data_queue.get(timeout=3)
@@ -61,36 +65,31 @@ def process_df(data_queue, write_queue):
         if row is None:
             break
         
+        topic = row['topic']
         context = row['context']
+                
+        output = model.generate(context)
         
-        t1_start = perf_counter()
-        
-        output = d_model.generate(context)
-
-        log_metric('generation_time', perf_counter() - t1_start)
-        
-        write_queue.put_nowait([context, output[1],  output[0],  output[2],  output[3],  output[4]])
+        write_queue.put_nowait([topic, context, output[1],  output[0],  [output[2],  output[3],  output[4]]])
 
     
 def gen_d():
     
     
-    dataset_path = 'datasets/processed/adversarial-qa.csv'
+    dataset_path = 'experiment_wikipedia-10T.csv'
     dataset_df = pd.read_csv(dataset_path).drop_duplicates(subset=['context'])
     
     # dataset_df.rename(columns = {'answer_text':'answer'}, inplace = True)
-        
-    dataset_name = dataset_path.split('/')[-1]
     
+    base_model_name = BASE_MODEL.split('/')[1]
+    train_dataset_name = 'gpt-3'
+    
+    model_name = f'{base_model_name}-{train_dataset_name}'
 
-    log_param('experiment_type', 'dataset_evaluation')
-    log_param('base_model', BASE_MODEL)
-    log_param('checkpoint', CHECKPOINT_PATH)
-    log_param('dataset_path', dataset_path)
+    output_file = f'datasets/experiment/{model_name}v2.csv'
     
-    output_file = f'datasets/eval/{BASE_MODEL}_{dataset_name}'
     
-    workers = 2
+    workers = 1
     
     write_queue = Queue()
     data_queue = Queue()
@@ -102,10 +101,9 @@ def gen_d():
     data_queue.close()
 
     # Start a process to write the results to the output file
-    p = Process(target=write_results, args=(write_queue, output_file, data_queue.qsize()))
+    p = Process(target=write_results, args=(write_queue, output_file, data_queue.qsize(), model_name))
     processes.append(p)
     p.start()
-    
     
     for i in range(workers):
         p = Process(target=process_df, args=(data_queue, write_queue,))
