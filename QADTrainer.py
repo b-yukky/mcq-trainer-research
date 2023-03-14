@@ -54,9 +54,9 @@ class QGDataModule(pl.LightningDataModule):
         self.custom = custom
 
     def setup(self, stage='fit'):
-        self.train_dataset = MultiDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-        self.val_dataset = MultiDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
-        self.test_dataset = MultiDataset(self.test_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+        self.train_dataset = MCQDataset(self.train_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+        self.val_dataset = MCQDataset(self.val_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
+        self.test_dataset = MCQDataset(self.test_df, self.tokenizer, self.source_max_token_len, self.target_max_token_len)
     
 
 
@@ -83,7 +83,7 @@ class QADTrainer():
         self.SOURCE_MAX_TOKEN_LEN = 512
         self.TARGET_MAX_TOKEN_LEN = 128
         self.MAX_EPOCHS = epochs
-        self.BATCH_SIZE = 3
+        self.BATCH_SIZE = 6
         self.LEARNING_RATE = learning_rate
         self.dataset_take_percentage(df_take_percentage)
         self.loading_model(model_name)

@@ -5,6 +5,8 @@ from typing import List, Dict, Tuple
 import torch
 from sentence_transformers import SentenceTransformer, util
 
+device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
+
 class MCQGenerator():
     
     def __init__(self, base_model: str, checkpoint_path: str) -> None:
@@ -15,6 +17,7 @@ class MCQGenerator():
         self.tokenizer.add_tokens(self.SEP_TOKEN)
         self.qg_model = QGModel.load_from_checkpoint(checkpoint_path=checkpoint_path, model_name=base_model,tokenizer_len=len(self.tokenizer))
         self.sentence_transformer = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+        self.qg_model.to(device)
         self.qg_model.freeze()
         self.qg_model.eval()
         
@@ -78,15 +81,18 @@ class MCQGenerator():
             add_special_tokens=True,
             return_tensors='pt'
         )
-
+        
+        source_encoding['input_ids'] = source_encoding['input_ids'].to(device)
+        source_encoding['attention_mask'] = source_encoding['attention_mask'].to(device)
+        
         with torch.no_grad():
             generated_ids = self.qg_model.model.generate(
                 input_ids=source_encoding['input_ids'],
                 attention_mask=source_encoding['attention_mask'],
                 num_beams=1,
                 max_length=self.TARGET_MAX_TOKEN_LEN,
-                repetition_penalty=1.6,
-                length_penalty=1.3,
+                repetition_penalty=1.1,
+                length_penalty=0.8,
                 early_stopping=True,
                 use_cache=True,
             )
@@ -95,8 +101,10 @@ class MCQGenerator():
             self.tokenizer.decode(generated_id, skip_special_tokens=True, clean_up_tokenization_spaces=True)
             for generated_id in generated_ids
         }
+        
+        print('preds', preds)
 
-        return ''.join(preds)
+        return ' <sep> '.join(preds)
     
     def _correct_index_of(self, text:str, substring: str, start_index: int = 0):
         try:

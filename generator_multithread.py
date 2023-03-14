@@ -25,8 +25,8 @@ random.seed(42)
 import os
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-CHECKPOINT_PATH ='checkpoints\\google\\multimcq-1M\\large\\00005-checkpoint-v3.ckpt'
-BASE_MODEL = 'google/flan-t5-large'
+CHECKPOINT_PATH ='checkpoints\\google\\davinci-50k\\base\\0002-checkpoint-v3.ckpt'
+BASE_MODEL = 'google/flan-t5-base'
 
 
 def write_results(write_queue, filename, length):
@@ -53,7 +53,7 @@ def write_results(write_queue, filename, length):
     
 def process_df(data_queue, write_queue):
     # Do something with the row
-    d_model = MultiGenerator(BASE_MODEL, CHECKPOINT_PATH)
+    d_model = MCQGenerator(BASE_MODEL, CHECKPOINT_PATH)
 
     while True:
         row = data_queue.get(timeout=3)

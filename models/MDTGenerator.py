@@ -1,5 +1,5 @@
 from transformers import T5TokenizerFast as T5Tokenizer
-from QGModel import QGModel
+from models.QGModel import QGModel
 from typing import List, Dict, Tuple
 import string
 from sentence_transformers import SentenceTransformer, util

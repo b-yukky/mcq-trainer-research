@@ -1,18 +1,13 @@
 import multiprocessing
 from tqdm import tqdm
 
-import torch
 import random
 import pandas as pd
 import numpy as np
 import csv
 
-from  models.MCQGenerator import MCQGenerator
-from  models.MultiGenerator import MultiGenerator
-from models.LeafGenerator import LeafBaseMCQGenerator
 from models.OpenAIDavinciGenerator import OpenAIDavinciGenerator
-from models.OpenAICurieGenerator import OpenAICurieGenerator
-from models.OpenAIBabbageGenerator import OpenAIBabbageGenerator
+
 
 from multiprocessing import Process, Queue
 
@@ -22,11 +17,10 @@ import time
 import os
 os.environ["PYTHONUNBUFFERED"] = "1"
 
-CHECKPOINT_PATH ='checkpoints\\google\\multiqad-400k\\large\\best-checkpoint-v3.ckpt'
-BASE_MODEL = 'google/flan-t5-large'
-# BASE_MODEL = '/babbage-multiqad400k'
+CHECKPOINT_PATH ='checkpoints\\google\\multimcq-1M\\base\\00005-checkpoint-v3.ckpt'
+BASE_MODEL = '/text-davinci-003'
 
-DATASET_NAME = 'wikipedia-10T'
+DATASET_NAME = 'wikipedia-50k-en'
 
 def write_results(write_queue, filename, length, model_name):
     global DATASET_NAME
@@ -48,8 +42,8 @@ def write_results(write_queue, filename, length, model_name):
             output = pd.concat([pd.DataFrame([result + [model_name] + [DATASET_NAME]], columns=header), output])
             count += 1
             
-            if count == 100:
-                output.to_csv(filename, index=False)
+            if count % 100 == 0:
+                output.to_csv(filename+'.backup', index=False)
                 print('Saved!')
         
         print('Done!')
@@ -59,8 +53,8 @@ def write_results(write_queue, filename, length, model_name):
     
 def process_df(data_queue, write_queue):
     # Do something with the row
-    model = MCQGenerator(BASE_MODEL, CHECKPOINT_PATH)
-    # model = OpenAIBabbageGenerator()
+    # model = MultiGenerator(BASE_MODEL, CHECKPOINT_PATH)
+    model = OpenAIDavinciGenerator()
 
     while True:
         row = data_queue.get(timeout=3)
@@ -72,7 +66,7 @@ def process_df(data_queue, write_queue):
         context = row['context']
                 
         output = model.generate(context)
-        # time.sleep(0.2)
+        time.sleep(0.1)
         
         write_queue.put_nowait([topic, context, output[1],  output[0],  [output[2],  output[3],  output[4]]])
 
@@ -80,17 +74,17 @@ def process_df(data_queue, write_queue):
 def gen_d():
     
     
-    dataset_path = 'experiment_wikipedia-10T.csv'
+    dataset_path = 'datasets/davinci/wikipedia-50k-en.csv'
     dataset_df = pd.read_csv(dataset_path).drop_duplicates(subset=['context'])
     
     # dataset_df.rename(columns = {'answer_text':'answer'}, inplace = True)
     
     base_model_name = BASE_MODEL.split('/')[1]
-    train_dataset_name = 'multiqad-400k'
+    train_dataset_name = 'gpt-3-50k-en'
     
     model_name = f'{base_model_name}-{train_dataset_name}'
 
-    output_file = f'datasets/experiment/{model_name}-v2.csv'
+    output_file = f'datasets/davinci/{model_name}.csv'
     
     workers = 1
     
